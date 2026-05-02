@@ -47,6 +47,7 @@ class ImportScripts::Talbotoc < ImportScripts::Base
     @source_db = SQLite3::Database.new(@db_path)
     @source_db.results_as_hash = true
     @upload_markdown_by_media_id = {}
+    @user_id_by_source_author_id = {}
     @skip_updates = true if @dry_run
   end
 
@@ -363,14 +364,23 @@ class ImportScripts::Talbotoc < ImportScripts::Base
   end
 
   def post_user(post)
-    User.find(
-      user_id_from_imported_user_id(user_import_id(post["author_id"])) || Discourse::SYSTEM_USER_ID,
-    )
+    User.find(imported_or_system_user_id(post["author_id"]))
   end
 
   def topic_user_id(topic)
-    user_id_from_imported_user_id(user_import_id(topic["first_post_author_id"])) ||
-      Discourse::SYSTEM_USER_ID
+    imported_or_system_user_id(topic["first_post_author_id"])
+  end
+
+  def imported_or_system_user_id(source_author_id)
+    @user_id_by_source_author_id.fetch(source_author_id.to_s) do
+      user_id = user_id_from_imported_user_id(user_import_id(source_author_id))
+      @user_id_by_source_author_id[source_author_id.to_s] =
+        if user_id.present? && User.exists?(id: user_id)
+          user_id
+        else
+          Discourse::SYSTEM_USER_ID
+        end
+    end
   end
 
   def topic_title(topic)

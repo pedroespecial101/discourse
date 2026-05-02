@@ -327,6 +327,21 @@ RSpec.describe ImportScripts::Talbotoc do
     )
   end
 
+  it "falls back to the system user when an imported user mapping is stale" do
+    with_source_db do |db|
+      create_source_schema(db)
+      seed_source_data(db)
+    end
+
+    import = build_import
+    import.stubs(:user_id_from_imported_user_id).with("talbotoc:user:1").returns(-1)
+
+    expect(import.send(:post_user, { "author_id" => "1" })).to eq(Discourse.system_user)
+    expect(import.send(:topic_user_id, { "first_post_author_id" => "1" })).to eq(
+      Discourse::SYSTEM_USER_ID,
+    )
+  end
+
   it "skips broad media refresh in fast incremental mode" do
     with_source_db do |db|
       create_source_schema(db)
