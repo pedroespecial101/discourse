@@ -91,6 +91,55 @@ after a few manual incremental runs have completed cleanly. The automation
 should run inside the app container and should not run full rebakes after every
 incremental pass.
 
+### 100-topic sample result
+
+On 2026-05-02, a normal incremental sample was run against the staged 2026-05-01
+snapshot with `TALBOTOC_LIMIT=100` and media refresh enabled:
+
+```bash
+TALBOTOC_SOURCE_DB="/shared/import/talbotoc/talbotoc_archive_snapshot.db" \
+TALBOTOC_SOURCE_MEDIA_DIR="/shared/import/talbotoc/archive_media" \
+TALBOTOC_WORK_DIR="/shared/import/talbotoc/incremental" \
+TALBOTOC_LIMIT=100 \
+bash script/import_scripts/talbotoc_incremental.sh
+```
+
+Result:
+
+- Importer duration: `00h 01min 02sec`.
+- Duplicate topic import IDs remained `0`.
+- Duplicate placeholder post import IDs remained `0`.
+- Imported real posts remained `62,498`.
+- Placeholder topics remained `31,618`.
+- Upload count remained `2,547`.
+- Permalinks remained `38,805`.
+
+This confirms the incremental wrapper can rerun cleanly against already imported
+data without recreating placeholders or duplicating posts.
+
+## Rebuild survival
+
+The canonical TalbotOC importer source is this Discourse repo commit, not the
+live container filesystem. A Discourse container rebuild can replace
+`/var/www/discourse/script/import_scripts`, so after any rebuild:
+
+1. Start the rebuilt `app` container.
+2. Recopy `script/import_scripts/talbotoc.rb` and
+   `script/import_scripts/talbotoc_incremental.sh` from the committed source or
+   persistent server override directory.
+3. Run `ruby -c script/import_scripts/talbotoc.rb` and
+   `bash -n script/import_scripts/talbotoc_incremental.sh` inside the container.
+4. Run a dry-run incremental wrapper check before any full import.
+
+Recommended server-side override location:
+
+```text
+/opt/appdata/discourse/importer-overrides/
+```
+
+Keep that directory in sync with the committed repo files until the TalbotOC
+importer is no longer needed or is deployed through a maintained Discourse fork.
+
 ## Production checklist
 
 Before running against the tailnet Discourse instance:
