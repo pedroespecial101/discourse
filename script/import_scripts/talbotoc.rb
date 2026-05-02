@@ -11,8 +11,10 @@ class ImportScripts::Talbotoc < ImportScripts::Base
   SOURCE_DB_PATH = ENV["TALBOTOC_DB"]
   MEDIA_DIR = ENV["TALBOTOC_MEDIA_DIR"]
   LIMIT = ENV["TALBOTOC_LIMIT"]&.to_i
+  TOPIC_OFFSET = ENV["TALBOTOC_TOPIC_OFFSET"].to_i
   DRY_RUN = ENV["TALBOTOC_DRY_RUN"].present?
   SKIP_COMPLETE_TOPICS = ENV["TALBOTOC_SKIP_COMPLETE_TOPICS"].present?
+  FAST_INCREMENTAL = ENV["TALBOTOC_FAST_INCREMENTAL"].present?
   LOCK_FILE = ENV["TALBOTOC_LOCK_FILE"].presence || "/tmp/talbotoc-import.lock"
 
   IMPORT_PREFIX = "talbotoc"
@@ -23,8 +25,10 @@ class ImportScripts::Talbotoc < ImportScripts::Base
     db_path: SOURCE_DB_PATH,
     media_dir: MEDIA_DIR,
     limit: LIMIT,
+    topic_offset: TOPIC_OFFSET,
     dry_run: DRY_RUN,
     skip_complete_topics: SKIP_COMPLETE_TOPICS,
+    fast_incremental: FAST_INCREMENTAL,
     lock_file: LOCK_FILE
   )
     raise ArgumentError, "Set TALBOTOC_DB to the crawler SQLite database path" if db_path.blank?
@@ -35,8 +39,10 @@ class ImportScripts::Talbotoc < ImportScripts::Base
     @db_path = db_path
     @media_dir = media_dir
     @limit = limit
+    @topic_offset = topic_offset.to_i
     @dry_run = dry_run
     @skip_complete_topics = skip_complete_topics
+    @fast_incremental = fast_incremental
     @lock_file = lock_file
     @source_db = SQLite3::Database.new(@db_path)
     @source_db.results_as_hash = true
@@ -195,7 +201,7 @@ class ImportScripts::Talbotoc < ImportScripts::Base
 
     import_reply_posts(topic_id, posts.drop(1)) if topic_id.present?
 
-    refresh_imported_post_media(posts)
+    refresh_imported_post_media(posts) if !@fast_incremental
     refresh_topic_metadata(topic)
   end
 
@@ -291,7 +297,10 @@ class ImportScripts::Talbotoc < ImportScripts::Base
   end
 
   def topic_rows
-    limited_rows("SELECT * FROM topics ORDER BY CAST(topic_id AS INTEGER)")
+    query = +"SELECT * FROM topics ORDER BY CAST(topic_id AS INTEGER)"
+    query << " LIMIT #{@limit.to_i}" if @limit
+    query << " OFFSET #{@topic_offset}" if @topic_offset.positive?
+    @source_db.execute(query)
   end
 
   def posts_for_topic(topic_id)

@@ -25,7 +25,10 @@ bin/rspec spec/script/import_scripts/talbotoc_spec.rb
 - `TALBOTOC_DB`: required path to `talbotoc_archive.db`.
 - `TALBOTOC_MEDIA_DIR`: optional path to downloaded archive media.
 - `TALBOTOC_LIMIT`: optional limit for subset validation runs.
+- `TALBOTOC_TOPIC_OFFSET`: optional topic offset for subset validation runs.
 - `TALBOTOC_DRY_RUN`: when present, prints source counts without importing.
+- `TALBOTOC_FAST_INCREMENTAL`: when present, imports topics/posts/placeholders
+  but skips the broad media refresh for already imported posts.
 - `TALBOTOC_SKIP_COMPLETE_TOPICS`: optional recovery speed-up for interrupted
   runs. When present, topics whose posts are already fully imported are skipped
   instead of being rechecked for media rewrites.
@@ -45,6 +48,17 @@ Example subset import:
 TALBOTOC_DB="/path/to/talbotoc_archive.db" \
 TALBOTOC_MEDIA_DIR="/path/to/archive_media" \
 TALBOTOC_LIMIT=25 \
+ruby script/import_scripts/talbotoc.rb
+```
+
+Example fast incremental subset:
+
+```bash
+TALBOTOC_DB="/path/to/talbotoc_archive.db" \
+TALBOTOC_MEDIA_DIR="/path/to/archive_media" \
+TALBOTOC_TOPIC_OFFSET=100 \
+TALBOTOC_LIMIT=1000 \
+TALBOTOC_FAST_INCREMENTAL=1 \
 ruby script/import_scripts/talbotoc.rb
 ```
 
@@ -86,6 +100,14 @@ For recovery after an interrupted run, `TALBOTOC_SKIP_COMPLETE_TOPICS=1` can be
 added temporarily. Do not use that flag for normal incremental imports because
 it skips media refreshes for already imported posts.
 
+For high-volume catch-up while the crawler is still running, use
+`TALBOTOC_FAST_INCREMENTAL=1`. Fast mode still embeds downloaded media when a
+post is newly created or when a placeholder is replaced, but it does not revisit
+already imported posts to rewrite media that arrived later. Run normal
+incremental imports without fast mode periodically, after large crawl
+milestones, and before final cutover to refresh older posts whose media became
+available after their first import.
+
 A cron or systemd timer can call the wrapper every 30 minutes during testing
 after a few manual incremental runs have completed cleanly. The automation
 should run inside the app container and should not run full rebakes after every
@@ -116,6 +138,26 @@ Result:
 
 This confirms the incremental wrapper can rerun cleanly against already imported
 data without recreating placeholders or duplicating posts.
+
+### Fast 1,000-topic sample result
+
+Run on `pedroserve02-A1` against the `20260502T064811Z` crawler snapshot with
+`TALBOTOC_TOPIC_OFFSET=100`, `TALBOTOC_LIMIT=1000`, and
+`TALBOTOC_FAST_INCREMENTAL=1`.
+
+Result:
+
+- Duration: 2 minutes 23 seconds.
+- Duplicate `talbotoc:topic:%` topic import IDs: `0`.
+- Duplicate `talbotoc:topic:%:placeholder` post import IDs: `0`.
+- Imported real posts: `62,498`, unchanged from baseline.
+- Placeholder topics: `31,618`, unchanged from baseline.
+- Uploads: `2,547`, unchanged from baseline.
+- Permalinks: `38,805`, unchanged from baseline.
+
+The unchanged upload count is expected for this sample because it reran across
+already imported topics and fast mode skipped the broad media refresh. New posts
+and placeholder replacements still process available media when they are created.
 
 ## Rebuild survival
 
