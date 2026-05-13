@@ -3,6 +3,9 @@
 The TalbotOC importer lives at `script/import_scripts/talbotoc.rb` and reads the
 SQLite archive produced by the TalbotOC crawler.
 
+For the next-stage migration runbook, see
+`docs/talbotoc-next-stage-migration.md`.
+
 ## Local validation
 
 Use Ruby 3.4.7 and Bundler 2.6.4, matching `Gemfile.lock`. The importer depends

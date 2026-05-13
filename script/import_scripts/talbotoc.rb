@@ -374,19 +374,41 @@ class ImportScripts::Talbotoc < ImportScripts::Base
   def imported_or_system_user_id(source_author_id)
     @user_id_by_source_author_id.fetch(source_author_id.to_s) do
       user_id = user_id_from_imported_user_id(user_import_id(source_author_id))
-      @user_id_by_source_author_id[source_author_id.to_s] =
-        if user_id.present? && User.exists?(id: user_id)
-          user_id
-        else
-          Discourse::SYSTEM_USER_ID
-        end
+      @user_id_by_source_author_id[source_author_id.to_s] = if user_id.present? &&
+           User.exists?(id: user_id)
+        user_id
+      else
+        Discourse::SYSTEM_USER_ID
+      end
     end
   end
 
   def topic_title(topic)
     title =
       clean_text(topic["topic_title"]).presence || "Untitled TalbotOC topic #{topic["topic_id"]}"
-    title.truncate(SiteSetting.max_topic_title_length, omission: "")
+    title = title.truncate(SiteSetting.max_topic_title_length, omission: "")
+
+    normalize_topic_title(title, topic["topic_id"])
+  end
+
+  def normalize_topic_title(title, topic_id)
+    return title if title_emoji_count(title) <= SiteSetting.max_emojis_in_title
+
+    title_without_emoji =
+      PrettyText.escape_emoji(title).to_s.gsub(Emoji::EMOJI_CODE_REGEXP, "").squish.presence
+
+    (title_without_emoji || "Untitled TalbotOC topic #{topic_id}").truncate(
+      SiteSetting.max_topic_title_length,
+      omission: "",
+    )
+  end
+
+  def title_emoji_count(title)
+    PrettyText
+      .unescape_emoji(Emoji.unicode_unescape(CGI.escapeHTML(title)))
+      .to_s
+      .scan(/<img.+?class\s*=\s*'(emoji|emoji emoji-custom)'/)
+      .size
   end
 
   def topic_closed?(topic)
@@ -441,7 +463,11 @@ class ImportScripts::Talbotoc < ImportScripts::Base
       else
         upload = create_upload(Discourse::SYSTEM_USER_ID, full_path, File.basename(full_path))
 
-        if upload.blank?
+        if upload.blank? || !upload.persisted? || upload.sha1.blank?
+          STDERR.puts(
+            "Failed to create usable upload for TalbotOC media #{media["media_id"]}: " \
+              "#{full_path} #{upload&.errors&.full_messages&.join(", ")}",
+          )
           nil
         elsif media["asset_type"] == "image"
           @uploader.embedded_image_html(upload)

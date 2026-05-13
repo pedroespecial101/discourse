@@ -296,6 +296,30 @@ RSpec.describe ImportScripts::Talbotoc do
     expect(replaced_post.topic.custom_fields[described_class::PLACEHOLDER_FIELD]).to eq("f")
   end
 
+  it "sanitizes titles that exceed Discourse emoji limits when replacing placeholders" do
+    SiteSetting.max_emojis_in_title = 1
+
+    with_source_db do |db|
+      create_source_schema(db)
+      seed_source_data(db)
+      db.execute("UPDATE topics SET topic_title = 'Happy 😀 camper 🚐 thread' WHERE topic_id = '200'")
+    end
+
+    run_import
+
+    with_source_db do |db|
+      db.execute(
+        "UPDATE topics SET posts_fetched_count = 1, posts_complete = 1 WHERE topic_id = '200'",
+      )
+      insert_pending_topic_real_post(db)
+    end
+
+    run_import
+
+    replaced_post = PostCustomField.find_by!(name: "import_id", value: "talbotoc:post:2001").post
+    expect(replaced_post.topic.title).to eq("Happy camper thread")
+  end
+
   it "does not create duplicate placeholders when a stale importer instance reruns" do
     with_source_db do |db|
       create_source_schema(db)
