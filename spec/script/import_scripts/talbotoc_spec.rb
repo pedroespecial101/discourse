@@ -246,6 +246,13 @@ RSpec.describe ImportScripts::Talbotoc do
     PostCustomField.where(name: "import_id", value: "talbotoc:topic:200:placeholder").count
   end
 
+  def topic_closed_small_action_count
+    Post.where(
+      post_type: Post.types[:small_action],
+      action_code: %w[closed.enabled closed.disabled],
+    ).count
+  end
+
   it "imports categories, staged users, real posts, and placeholder topics" do
     with_source_db do |db|
       create_source_schema(db)
@@ -268,6 +275,7 @@ RSpec.describe ImportScripts::Talbotoc do
       TopicCustomField.find_by!(name: "import_id", value: "talbotoc:topic:200").topic
     expect(placeholder_topic).to be_closed
     expect(placeholder_topic.first_post.raw).to include("Archive import pending")
+    expect(topic_closed_small_action_count).to eq(0)
   end
 
   it "is rerunnable and replaces a placeholder when the real first post arrives" do
@@ -293,7 +301,9 @@ RSpec.describe ImportScripts::Talbotoc do
 
     replaced_post = PostCustomField.find_by!(name: "import_id", value: "talbotoc:post:2001").post
     expect(replaced_post.raw).to eq("Real body has arrived")
+    expect(replaced_post.topic).not_to be_closed
     expect(replaced_post.topic.custom_fields[described_class::PLACEHOLDER_FIELD]).to eq("f")
+    expect(topic_closed_small_action_count).to eq(0)
   end
 
   it "sanitizes titles that exceed Discourse emoji limits when replacing placeholders" do

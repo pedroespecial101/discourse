@@ -268,7 +268,7 @@ class ImportScripts::Talbotoc < ImportScripts::Base
       title: topic_title(topic),
       category_id: category_id_from_imported_category_id(category_import_id(topic["forum_id"])),
     )
-    topic_record.update_status("closed", topic_closed?(topic), Discourse.system_user)
+    set_imported_topic_closed_state(topic_record, topic_closed?(topic))
 
     add_post(post_import_id(post["post_id"]), discourse_post)
     add_topic(discourse_post)
@@ -415,6 +415,10 @@ class ImportScripts::Talbotoc < ImportScripts::Base
     topic["is_closed"].to_i == 1
   end
 
+  def set_imported_topic_closed_state(topic, closed)
+    topic.update_columns(closed: closed)
+  end
+
   def placeholder_raw(topic)
     lines = []
     lines << clean_text(topic["short_content"]).presence
@@ -533,7 +537,7 @@ class ImportScripts::Talbotoc < ImportScripts::Base
     persist_topic_metadata(topic, row)
     topic.custom_fields[PLACEHOLDER_FIELD] = true
     topic.save_custom_fields
-    topic.update_status("closed", true, Discourse.system_user)
+    set_imported_topic_closed_state(topic, true)
   end
 
   def persist_topic_metadata(topic, row)
@@ -550,7 +554,7 @@ class ImportScripts::Talbotoc < ImportScripts::Base
 
     discourse_topic = Topic.find(topic_id)
     persist_topic_metadata(discourse_topic, topic)
-    discourse_topic.update_status("closed", topic_closed?(topic), Discourse.system_user)
+    set_imported_topic_closed_state(discourse_topic, topic_closed?(topic))
   end
 
   def persist_category_metadata(category, row)
