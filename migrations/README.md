@@ -1,9 +1,11 @@
 # Migrations Tooling
 
+For agent-facing migration instructions, start with `migrations/AGENTS.md`.
+
 ## Command line interface
 
 ```bash
-./bin/cli help
+migrations/bin/cli help
 ```
 
 ## Converters

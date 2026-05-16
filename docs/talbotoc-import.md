@@ -3,8 +3,26 @@
 The TalbotOC importer lives at `script/import_scripts/talbotoc.rb` and reads the
 SQLite archive produced by the TalbotOC crawler.
 
-For the next-stage migration runbook, see
-`docs/talbotoc-next-stage-migration.md`.
+This is the current agent-facing TalbotOC import runbook. Historical migration
+stage notes and dated validation samples are archived in
+`docs/archive/talbotoc-next-stage-migration-2026-05.md`.
+
+## Container command context
+
+On production-style hosts (for example `pedroserve02-a1`), run operational
+commands from `/var/discourse` and execute Rails or rake commands in the `app`
+container as the `discourse` OS user with `RAILS_ENV=production`.
+
+Using `docker exec app ...` as root without setting `RAILS_ENV=production` can
+produce misleading authentication/database errors (for example
+`ActiveRecord::NoDatabaseError` against `discourse`) or development-gem load
+errors (`debug/prelude`).
+
+Recommended wrapper:
+
+```bash
+docker exec app bash -lc 'su - discourse -c '\''cd /var/www/discourse && RAILS_ENV=production <command>'\'''
+```
 
 ## Local validation
 
@@ -93,10 +111,12 @@ prints source/imported counts.
 Example from inside the Discourse app container:
 
 ```bash
+docker exec app bash -lc 'su - discourse -c '\''cd /var/www/discourse && \
 TALBOTOC_SOURCE_DB="/shared/import/talbotoc/live/talbotoc_archive.db" \
 TALBOTOC_SOURCE_MEDIA_DIR="/shared/import/talbotoc/live/archive_media" \
 TALBOTOC_WORK_DIR="/shared/import/talbotoc/incremental" \
-bash script/import_scripts/talbotoc_incremental.sh
+RAILS_ENV=production \
+bash script/import_scripts/talbotoc_incremental.sh'\'''
 ```
 
 For recovery after an interrupted run, `TALBOTOC_SKIP_COMPLETE_TOPICS=1` can be
@@ -116,51 +136,7 @@ after a few manual incremental runs have completed cleanly. The automation
 should run inside the app container and should not run full rebakes after every
 incremental pass.
 
-### 100-topic sample result
-
-On 2026-05-02, a normal incremental sample was run against the staged 2026-05-01
-snapshot with `TALBOTOC_LIMIT=100` and media refresh enabled:
-
-```bash
-TALBOTOC_SOURCE_DB="/shared/import/talbotoc/talbotoc_archive_snapshot.db" \
-TALBOTOC_SOURCE_MEDIA_DIR="/shared/import/talbotoc/archive_media" \
-TALBOTOC_WORK_DIR="/shared/import/talbotoc/incremental" \
-TALBOTOC_LIMIT=100 \
-bash script/import_scripts/talbotoc_incremental.sh
-```
-
-Result:
-
-- Importer duration: `00h 01min 02sec`.
-- Duplicate topic import IDs remained `0`.
-- Duplicate placeholder post import IDs remained `0`.
-- Imported real posts remained `62,498`.
-- Placeholder topics remained `31,618`.
-- Upload count remained `2,547`.
-- Permalinks remained `38,805`.
-
-This confirms the incremental wrapper can rerun cleanly against already imported
-data without recreating placeholders or duplicating posts.
-
-### Fast 1,000-topic sample result
-
-Run on `pedroserve02-A1` against the `20260502T064811Z` crawler snapshot with
-`TALBOTOC_TOPIC_OFFSET=100`, `TALBOTOC_LIMIT=1000`, and
-`TALBOTOC_FAST_INCREMENTAL=1`.
-
-Result:
-
-- Duration: 2 minutes 23 seconds.
-- Duplicate `talbotoc:topic:%` topic import IDs: `0`.
-- Duplicate `talbotoc:topic:%:placeholder` post import IDs: `0`.
-- Imported real posts: `62,498`, unchanged from baseline.
-- Placeholder topics: `31,618`, unchanged from baseline.
-- Uploads: `2,547`, unchanged from baseline.
-- Permalinks: `38,805`, unchanged from baseline.
-
-The unchanged upload count is expected for this sample because it reran across
-already imported topics and fast mode skipped the broad media refresh. New posts
-and placeholder replacements still process available media when they are created.
+For dated sample results, see the archived TalbotOC notes.
 
 ## Rebuild survival
 
@@ -202,6 +178,23 @@ Before running against the tailnet Discourse instance:
    permalinks, placeholders, and media rewrites.
 8. Leave the crawler running independently and rerun the importer as more
    TalbotOC posts and media arrive.
+
+## Content reconciliation
+
+After the main import is current enough for operational review:
+
+1. Run one normal non-fast incremental import against a frozen source snapshot.
+2. Revisit posts whose media became available after their first import and
+   rewrite their raw content to use Discourse uploads.
+3. Preserve or map meaningful Tapatalk/default smileys.
+4. Rewrite quotes to native Discourse quote syntax where the quoted post can be
+   resolved; otherwise use username-only attribution.
+5. Investigate imported `Open` / `Closed` short-post artifacts and ensure they
+   do not remain as visible normal posts or affect recency, counts, or bumping.
+6. Rebake changed posts and sample older, newer, media-heavy, and
+   placeholder-replaced topics.
+7. Keep unresolved media in a backlog with source URLs and topic IDs so it can
+   be retried later without rediscovery.
 
 ## Duplicate placeholder cleanup
 

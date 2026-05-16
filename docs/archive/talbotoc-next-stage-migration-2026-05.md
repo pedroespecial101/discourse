@@ -1,8 +1,30 @@
-# TalbotOC Next-Stage Migration Runbook
+# Archived TalbotOC Next-Stage Migration Notes
+
+Archived on 2026-05-16. These notes preserve dated migration-stage assumptions,
+sample results, and content-reconciliation guidance from the TalbotOC import
+work. They are not the current agent-facing runbook.
+
+For current TalbotOC importer operations, use `docs/talbotoc-import.md`.
 
 This runbook covers the migration stage after the crawler has produced enough
 media to make the imported forum content meaningful, but before final cutover.
 It is written so a smaller agent can execute it with minimal new decisions.
+
+## Container command context
+
+For operational commands on production-style hosts, execute Rails/rake/import
+commands in the Discourse `app` container as the `discourse` OS user with
+`RAILS_ENV=production`.
+
+Using `docker exec app ...` as root or omitting `RAILS_ENV=production` can
+trigger misleading authentication/database errors or development-gem load
+failures.
+
+Recommended wrapper:
+
+```bash
+docker exec app bash -lc 'su - discourse -c '\''cd /var/www/discourse && RAILS_ENV=production <command>'\'''
+```
 
 ## Current Signal
 
@@ -51,10 +73,12 @@ It is written so a smaller agent can execute it with minimal new decisions.
 Recommended command shape:
 
 ```bash
+docker exec app bash -lc 'su - discourse -c '\''cd /var/www/discourse && \
 TALBOTOC_SOURCE_DB="/shared/import/talbotoc/live/talbotoc_archive.db" \
 TALBOTOC_SOURCE_MEDIA_DIR="/shared/import/talbotoc/live/archive_media" \
 TALBOTOC_WORK_DIR="/shared/import/talbotoc/incremental" \
-bash script/import_scripts/talbotoc_incremental.sh
+RAILS_ENV=production \
+bash script/import_scripts/talbotoc_incremental.sh'\'''
 ```
 
 ## 3. Fix Content Quality
@@ -153,6 +177,54 @@ bash script/import_scripts/talbotoc_incremental.sh
 - Profile metadata is either imported or listed in the gap report.
 - The missing media backlog is classified and reported.
 - Rebaked content shows sane bumping, counts, and chronology.
+
+## Historical Incremental Samples
+
+### 100-topic sample result
+
+On 2026-05-02, a normal incremental sample was run against the staged 2026-05-01
+snapshot with `TALBOTOC_LIMIT=100` and media refresh enabled:
+
+```bash
+TALBOTOC_SOURCE_DB="/shared/import/talbotoc/talbotoc_archive_snapshot.db" \
+TALBOTOC_SOURCE_MEDIA_DIR="/shared/import/talbotoc/archive_media" \
+TALBOTOC_WORK_DIR="/shared/import/talbotoc/incremental" \
+TALBOTOC_LIMIT=100 \
+bash script/import_scripts/talbotoc_incremental.sh
+```
+
+Result:
+
+- Importer duration: `00h 01min 02sec`.
+- Duplicate topic import IDs remained `0`.
+- Duplicate placeholder post import IDs remained `0`.
+- Imported real posts remained `62,498`.
+- Placeholder topics remained `31,618`.
+- Upload count remained `2,547`.
+- Permalinks remained `38,805`.
+
+This confirmed that the incremental wrapper could rerun cleanly against already
+imported data without recreating placeholders or duplicating posts at that time.
+
+### Fast 1,000-topic sample result
+
+Run on `pedroserve02-A1` against the `20260502T064811Z` crawler snapshot with
+`TALBOTOC_TOPIC_OFFSET=100`, `TALBOTOC_LIMIT=1000`, and
+`TALBOTOC_FAST_INCREMENTAL=1`.
+
+Result:
+
+- Duration: 2 minutes 23 seconds.
+- Duplicate `talbotoc:topic:%` topic import IDs: `0`.
+- Duplicate `talbotoc:topic:%:placeholder` post import IDs: `0`.
+- Imported real posts: `62,498`, unchanged from baseline.
+- Placeholder topics: `31,618`, unchanged from baseline.
+- Uploads: `2,547`, unchanged from baseline.
+- Permalinks: `38,805`, unchanged from baseline.
+
+The unchanged upload count was expected for this sample because it reran across
+already imported topics and fast mode skipped the broad media refresh. New posts
+and placeholder replacements still processed available media when created.
 
 ## Assumptions
 
